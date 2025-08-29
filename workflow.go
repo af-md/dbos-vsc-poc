@@ -24,7 +24,7 @@ func PrintScheduledWorkflow(dbosCtx dbos.DBOSContext, scheduledTime time.Time) (
 
 	fmt.Println("Scheduled time: ", scheduledTime)
 
-	result, err := dbos.RunAsStep(dbosCtx, func(ctx context.Context) (Snapshot, error) {
+	snapshot, err := dbos.RunAsStep(dbosCtx, func(ctx context.Context) (Snapshot, error) {
 		return findKeyForSession(ctx)
 	})
 
@@ -34,14 +34,28 @@ func PrintScheduledWorkflow(dbosCtx dbos.DBOSContext, scheduledTime time.Time) (
 		return "", err
 	}
 
-	// print time
-	fmt.Println("Scheduled time: ", scheduledTime)
+	fmt.Println("Found key for sessionising: ", snapshot.MachineID)
+	fmt.Println("With impression start: ", snapshot.ImpressionStart)
+	fmt.Println("With impression end: ", snapshot.ImpressionEnd)
 
-	fmt.Println("Found key for sessionising: ", result.MachineID)
-	fmt.Println("With impression start: ", result.ImpressionStart)
-	fmt.Println("With impression end: ", result.ImpressionEnd)
+	_, err = dbos.RunAsStep(dbosCtx, func(ctx context.Context) (string, error) {
+		return deleteKeyFromRedis(ctx, snapshot.MachineID)
+	})
 
-	return result.MachineID, nil
+	if err != nil {
+		fmt.Println("Error deleting key from redis: ", err)
+		return "", err
+	}
+
+	_, err = dbos.RunAsStep(dbosCtx, func(ctx context.Context) (string, error) {
+		return sendSnapshotToExternalService(ctx, snapshot)
+	})
+	if err != nil {
+		fmt.Println("Error sending snapshot to external service: ", err)
+		return "", err
+	}
+
+	return snapshot.MachineID, nil
 }
 
 func findKeyForSession(ctx context.Context) (Snapshot, error) {
@@ -69,10 +83,22 @@ func findKeyForSession(ctx context.Context) (Snapshot, error) {
 	return snapshot, nil
 }
 
-// func deleteKeyFromRedis(ctx context.Context, input Snapshot) (string, error) {
+func deleteKeyFromRedis(ctx context.Context, input string) (string, error) {
+	err := redisClient.Del(ctx, input).Err()
+	if err != nil {
+		return fmt.Sprintf("failed to delete key: %s", input), err
+	}
+	
+	fmt.Println("Deleted key from redis: ", input)
+	return "Ingested to Redis", nil
+}
 
-// 	return "Ingested to Redis", nil
-// }
+func sendSnapshotToExternalService(ctx context.Context, input Snapshot) (string, error) {
+	// Simulate writing to external service
+	time.Sleep(1 * time.Second)
+	fmt.Println("Wrote snapshot to external service: ", input)
+	return "Wrote snapshot to external service", nil
+}
 
 // redis ingestion flow
 
