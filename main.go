@@ -30,6 +30,7 @@ var (
 
 func init() {
 	gob.Register(Snapshot{})
+	gob.Register(DeleteKeyResult{})
 }
 
 func impressionIngestionHanlder(w http.ResponseWriter, r *http.Request) {

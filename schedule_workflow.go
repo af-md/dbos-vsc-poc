@@ -10,18 +10,20 @@ import (
 
 type Snapshot struct {
 	MachineID       string
-	ImpressionStart string // this should be time
-	ImpressionEnd   string // this should be time TODO
+	ImpressionStart string
+	ImpressionEnd   string
 }
 
-// Simple scheduled workflow that just prints
+type DeleteKeyResult struct {
+	Deleted  bool
+	NotFound bool
+}
+
+// Questions:
+// 1. What happpens when there are multiple workflows running on the redis instance and they all try to sessionise. Could conflict arise?
+
+
 func PrintScheduledWorkflow(dbosCtx dbos.DBOSContext, scheduledTime time.Time) (Snapshot, error) {
-
-	// step 1 - find the key that needs sessionising (return snapshot with key)
-	// step 2 - delete the key from redis
-	// if key data was not found, then gracefully exit the workflow because the key was deleted
-	// step 3 - write the snapshot to the external service
-
 	fmt.Println("Scheduled time: ", scheduledTime)
 
 	snapshot, err := dbos.RunAsStep(dbosCtx, func(ctx context.Context) (Snapshot, error) {
@@ -91,11 +93,6 @@ func findKeyForSession(ctx context.Context) (Snapshot, error) {
 	return snapshot, nil
 }
 
-type DeleteKeyResult struct {
-	Deleted  bool
-	NotFound bool
-}
-
 func deleteKeyFromRedis(ctx context.Context, input string) (DeleteKeyResult, error) {
 	res, err := redisClient.Del(ctx, input).Result()
 	if err != nil {
@@ -117,29 +114,4 @@ func sendSnapshotToExternalService(ctx context.Context, input Snapshot) (string,
 	time.Sleep(1 * time.Second)
 	fmt.Println("Wrote snapshot to external service: ", input)
 	return "Wrote snapshot to external service", nil
-}
-
-
-
-// redis ingestion flow
-
-func IngestImpressionWorkflow(dbosCtx dbos.DBOSContext, input ImpressionsEvent) (string, error) {
-	result2, err := dbos.RunAsStep(dbosCtx, func(ctx context.Context) (string, error) {
-		return ingestToRedisStep(ctx, input)
-	})
-	if err != nil {
-		return "", err
-	}
-	return result2, nil
-}
-
-func ingestToRedisStep(ctx context.Context, input ImpressionsEvent) (string, error) {
-	for _, v := range input.Impressions {
-		err := redisClient.RPush(ctx, v.MachineID, v.CreatedAt).Err()
-		if err != nil {
-			return "", err
-		}
-	}
-
-	return "Ingested to Redis", nil
 }
