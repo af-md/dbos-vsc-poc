@@ -1,0 +1,48 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Go build output
+dbos-vsc-poc
+*.test
+
+/bin/*
+
+# Output of the go coverage tool, specifically when run with the -o flag
+coverage.out
+coverage.html
+
+# Go workspace file
+go.work
+
+# Dependency directories (Go modules)
+# These should be managed by `go mod` and not checked into VCS.
+vendor/
+
+# Environment variables
+# Store sensitive information and local configurations here.
+.env
+.env.*
+!/.env.example
+
+# IDE/Editor specific files
+.vscode/
+.idea/
+*.swp
+*~
+.project
+.classpath
+.settings/
+
+# OS-generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+vsc
