@@ -15,7 +15,7 @@ type Snapshot struct {
 }
 
 // Simple scheduled workflow that just prints
-func PrintScheduledWorkflow(dbosCtx dbos.DBOSContext, scheduledTime time.Time) (string, error) {
+func PrintScheduledWorkflow(dbosCtx dbos.DBOSContext, scheduledTime time.Time) (Snapshot, error) {
 
 	// step 1 - find the key that needs sessionising (return snapshot with key)
 	// step 2 - delete the key from redis
@@ -31,31 +31,39 @@ func PrintScheduledWorkflow(dbosCtx dbos.DBOSContext, scheduledTime time.Time) (
 	if err != nil {
 		// print the error
 		fmt.Println("Error finding key for session: ", err)
-		return "", err
+		return Snapshot{}, err
 	}
 
 	fmt.Println("Found key for sessionising: ", snapshot.MachineID)
 	fmt.Println("With impression start: ", snapshot.ImpressionStart)
 	fmt.Println("With impression end: ", snapshot.ImpressionEnd)
 
-	_, err = dbos.RunAsStep(dbosCtx, func(ctx context.Context) (string, error) {
+	deleteKeyResult, err := dbos.RunAsStep(dbosCtx, func(ctx context.Context) (DeleteKeyResult, error) {
 		return deleteKeyFromRedis(ctx, snapshot.MachineID)
 	})
 
 	if err != nil {
 		fmt.Println("Error deleting key from redis: ", err)
-		return "", err
+		return snapshot, err
+	}
+
+	if deleteKeyResult.NotFound {
+		// gracefully exit the workflow
+		fmt.Println("Key not found")
+		fmt.Println("Different workflow deleted the key")
+		return snapshot, nil
 	}
 
 	_, err = dbos.RunAsStep(dbosCtx, func(ctx context.Context) (string, error) {
 		return sendSnapshotToExternalService(ctx, snapshot)
 	})
+
 	if err != nil {
 		fmt.Println("Error sending snapshot to external service: ", err)
-		return "", err
+		return snapshot, err
 	}
 
-	return snapshot.MachineID, nil
+	return snapshot, nil
 }
 
 func findKeyForSession(ctx context.Context) (Snapshot, error) {
@@ -83,14 +91,25 @@ func findKeyForSession(ctx context.Context) (Snapshot, error) {
 	return snapshot, nil
 }
 
-func deleteKeyFromRedis(ctx context.Context, input string) (string, error) {
-	err := redisClient.Del(ctx, input).Err()
+type DeleteKeyResult struct {
+	Deleted  bool
+	NotFound bool
+}
+
+func deleteKeyFromRedis(ctx context.Context, input string) (DeleteKeyResult, error) {
+	res, err := redisClient.Del(ctx, input).Result()
 	if err != nil {
-		return fmt.Sprintf("failed to delete key: %s", input), err
+		return DeleteKeyResult{}, err
 	}
-	
+
+	if res == 0 {
+		fmt.Println("key wasn't found to delete: ", input)
+		fmt.Print("gracefully exiting the workflow")
+		return DeleteKeyResult{NotFound: true}, nil
+	}
+
 	fmt.Println("Deleted key from redis: ", input)
-	return "Ingested to Redis", nil
+	return DeleteKeyResult{Deleted: true}, nil
 }
 
 func sendSnapshotToExternalService(ctx context.Context, input Snapshot) (string, error) {
@@ -99,6 +118,8 @@ func sendSnapshotToExternalService(ctx context.Context, input Snapshot) (string,
 	fmt.Println("Wrote snapshot to external service: ", input)
 	return "Wrote snapshot to external service", nil
 }
+
+
 
 // redis ingestion flow
 
