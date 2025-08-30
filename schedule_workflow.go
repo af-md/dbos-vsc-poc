@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -10,8 +11,8 @@ import (
 
 type Snapshot struct {
 	MachineID       string
-	ImpressionStart string
-	ImpressionEnd   string
+	ImpressionStart time.Time
+	ImpressionEnd   time.Time
 }
 
 type DeleteKeyResult struct {
@@ -19,9 +20,14 @@ type DeleteKeyResult struct {
 	NotFound bool
 }
 
+const (
+	sessionDelay = 30 * time.Second
+)
+
 // Questions:
 // 1. What happpens when there are multiple workflows running on the redis instance and they all try to sessionise. Could conflict arise?
 
+// The delay complexity! how to
 
 func PrintScheduledWorkflow(dbosCtx dbos.DBOSContext, scheduledTime time.Time) (Snapshot, error) {
 	fmt.Println("Scheduled time: ", scheduledTime)
@@ -35,10 +41,6 @@ func PrintScheduledWorkflow(dbosCtx dbos.DBOSContext, scheduledTime time.Time) (
 		fmt.Println("Error finding key for session: ", err)
 		return Snapshot{}, err
 	}
-
-	fmt.Println("Found key for sessionising: ", snapshot.MachineID)
-	fmt.Println("With impression start: ", snapshot.ImpressionStart)
-	fmt.Println("With impression end: ", snapshot.ImpressionEnd)
 
 	deleteKeyResult, err := dbos.RunAsStep(dbosCtx, func(ctx context.Context) (DeleteKeyResult, error) {
 		return deleteKeyFromRedis(ctx, snapshot.MachineID)
@@ -84,10 +86,31 @@ func findKeyForSession(ctx context.Context) (Snapshot, error) {
 		return Snapshot{}, fmt.Errorf("key %s has no values", key)
 	}
 
+	// check if the created_at value (plus the session timeout) is in the past
+	impressionEnd, err := time.Parse(time.RFC3339, values[len(values)-1])
+	if err != nil {
+		fmt.Println("failed to parse time: ", values[len(values)-1])
+		return Snapshot{}, err
+	}
+
+	totalTime := impressionEnd.Add(sessionDelay)
+	res := totalTime.Before(time.Now())
+
+	if !res {
+		fmt.Println("totaltime is still ahead of the time.Now()")
+		return Snapshot{}, errors.New("impression time is ahead")
+	}
+
+	impressionStart, err := time.Parse(time.RFC3339, values[0])
+	if err != nil {
+		fmt.Println("failed to parse time: ", values[0])
+		return Snapshot{}, err
+	}
+
 	snapshot := Snapshot{
 		MachineID:       key,
-		ImpressionStart: values[0],
-		ImpressionEnd:   values[len(values)-1],
+		ImpressionStart: impressionStart,
+		ImpressionEnd:   impressionEnd,
 	}
 
 	return snapshot, nil
