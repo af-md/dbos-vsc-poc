@@ -24,11 +24,6 @@ const (
 	sessionDelay = 30 * time.Second
 )
 
-// Questions:
-// 1. What happpens when there are multiple workflows running on the redis instance and they all try to sessionise. Could conflict arise?
-
-// The delay complexity! how to
-
 func PrintScheduledWorkflow(dbosCtx dbos.DBOSContext, scheduledTime time.Time) (Snapshot, error) {
 	fmt.Println("Scheduled time: ", scheduledTime)
 
